@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0-alpha1/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.10.377/pdf.worker.js"></script>
+
+    <title>GeoJSON Canvas</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: "Proxima Nova", sans-serif;
+            overflow: hidden; /* Prevents scrolling when canvas zooms */
+        }
+
+        .canvas-container {
+            position: relative;
+            height: calc(100vh - 60px); /* Subtracting navbar height */
+            overflow: hidden; /* Ensures canvas doesn't overflow its container */
+        }
+
+        .canvas-geojson {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+
+        .inherited-styles-for-exported-element {
+            box-sizing: border-box;
+            color: rgba(0, 0, 0, .87);
+            cursor: default;
+            font-size: .875rem;
+            font-weight: 400;
+            line-height: 1.43;
+        }
+
+        /* Flexbox-styled Navbar/Header */
+        .navbar {
+            position: sticky;
+            top: 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1rem 5%;
+            background-color: #333;
+            color: white;
+            z-index: 1000; /* Ensures navbar is always on top */
+        }
+
+        .navbar a {
+            margin: 0 10px;
+            color: white;
+            text-decoration: none;
+        }
+
+        .navbar a:hover {
+            text-decoration: underline;
+        }
+
+        /* New styles for the PDF upload button */
+        .upload-btn-wrapper {
+            position: relative;
+            display: inline-block;
+            margin-left: 10px;
+        }
+
+        .upload-btn {
+            display: inline-flex;
+            align-items: center;
+            padding: 5px 15px;
+            cursor: pointer;
+            background-color: #444;
+            color: white;
+            border-radius: 5px;
+            transition: background-color 0.3s;
+        }
+
+        .upload-btn:hover {
+            background-color: #555;
+        }
+
+        .upload-btn-wrapper input[type="file"] {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            cursor: pointer;
+            opacity: 0;
+        }
+
+
+        /* Sidebar styles */
+        .sidebar {
+            position: fixed;
+            top: 60px; /* Navbar height */
+            left: 0;
+            width: 200px;
+            height: calc(100vh - 60px);
+            background-color: #f7f7f7;
+            border-right: 1px solid #e0e0e0;
+            padding: 1rem;
+            overflow-y: auto;
+        }
+
+        .sidebar h4 {
+            margin-top: 0;
+        }
+
+        .sidebar ul {
+            list-style-type: none;
+            padding: 0;
+        }
+
+        .sidebar li {
+            margin-bottom: 10px;
+            cursor: pointer;
+            color: #333;
+        }
+
+        .sidebar li:hover {
+            text-decoration: underline;
+        }
+
+        .canvas-container {
+            margin-left: 200px; /* Width of the sidebar */
+        }
+
+        #pdf-canvas {
+            width: 100%;
+            height: calc(100vh - 56px);
+        }
+        #sidebar {
+            width: 200px;
+            height: calc(100vh - 56px);
+            overflow-y: auto;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="navbar navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">PDF Viewer</a>
+            <div class="d-flex">
+                <input type="file" id="pdf-upload" accept=".pdf" class="form-control me-2">
+                <button id="prev" class="btn btn-primary me-2">&lt;</button>
+                <button id="next" class="btn btn-primary">&gt;</button>
+            </div>
+        </div>
+    </div>
+    <div class="d-flex">
+        <div id="sidebar" class="bg-light p-3">
+            <h5>Uploaded PDFs</h5>
+            <ul id="pdf-list" class="list-unstyled"></ul>
+        </div>
+        <div class="flex-grow-1">
+            <canvas id="pdf-canvas" class="w-100"></canvas>
+        </div>
+    </div>
+
+    <script>
+        // Your JS here with enhancements
+        let pdfDoc = null;
+        let pageNum = 1;
+        let scale = 1.0;
+        const canvas = document.getElementById('pdf-canvas');
+        const ctx = canvas.getContext('2d');
+
+        function renderPage(num) {
+            pdfDoc.getPage(num).then(page => {
+                const viewport = page.getViewport({ scale: scale });
+                canvas.height = viewport.height;
+                canvas.width = viewport.width;
+                const renderContext = {
+                    canvasContext: ctx,
+                    viewport: viewport
+                };
+                page.render(renderContext);
+            });
+        }
+
+        document.getElementById('pdf-upload').addEventListener('change', function() {
+            const file = this.files[0];
+            if (file) {
+                const objectURL = URL.createObjectURL(file);
+                pdfjsLib.getDocument(objectURL).promise.then(pdfDoc_ => {
+                    pdfDoc = pdfDoc_;
+                    pageNum = 1;
+                    renderPage(pageNum);
+                });
+            }
+        });
+
+        let timeoutId;
+        canvas.addEventListener('wheel', function(event) {
+            event.preventDefault();
+            clearTimeout(timeoutId);
+            if (event.deltaY < 0) {
+                scale += 0.1;
+            } else {
+                scale -= 0.1;
+            }
+            scale = Math.min(Math.max(.5, scale), 3);
+            timeoutId = setTimeout(() => {
+                renderPage(pageNum);
+            }, 100);
+        });
+
+        document.getElementById('prev').addEventListener('click', function() {
+            if (pageNum > 1) {
+                pageNum--;
+                renderPage(pageNum);
+            }
+        });
+
+        document.getElementById('next').addEventListener('click', function() {
+            if (pageNum < pdfDoc.numPages) {
+                pageNum++;
+                renderPage(pageNum);
+            }
+        });
+    </script>    
+</body> 
+</html>
+
+
+
+
+
+
+    
+
+
+
